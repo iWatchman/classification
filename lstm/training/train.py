@@ -58,7 +58,13 @@ tf.app.flags.DEFINE_integer('test_secs',
 def main(argv=None):
     '''Main program script'''
 
-    # TODO(gnashcraft): this
+    # TODO(gnashcraft):
+    # 1. Split data into train, validation, testing sets
+    # 2. Add lstm training, evaluation operations
+    # 3. Run training loop
+    # 3.1. Perform interval evaluations
+    # 4. Perform testing evaluation
+    # 5. Save trained graph
     return
 
 if __name__ == '__main__':
