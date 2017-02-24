@@ -5,8 +5,10 @@ Usage:
     TODO(gnashcraft)
 """
 
+import input_data
+from lstm import io_wrapper as iow
+import model
 import tensorflow as tf
-from utils import io
 
 # Define optional command-line arguments
 # Positional arguments are passed into argv in main()
@@ -57,6 +59,9 @@ tf.app.flags.DEFINE_integer('test_secs',
 
 def main(argv=None):
     '''Main program script'''
+
+    # NOTE
+    # Don't forget variable scope for reusing variables in validation and test
 
     # TODO(gnashcraft):
     # 1. Split data into train, validation, testing sets
