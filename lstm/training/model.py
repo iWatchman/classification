@@ -40,6 +40,8 @@ class Model():
         # Size: [batches, time, pool_values]
         # TODO(gnashcraft): get input sizes from input config
         self._inputs = inputs = tf.placeholder(tf.float32, [None, None, None], name='inputs')
+        if config.keep_prob < 1.0:
+            inputs = tf.nn.dropout(inputs, config.keep_prob)
         labels = tf.placeholder(tf.int32, [None, None], name='labels')
 
         # Trainable variables for linear activation layer
