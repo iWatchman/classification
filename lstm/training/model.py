@@ -152,12 +152,12 @@ class TrainModel(Model):
     def train_step(self, sess, inputs, labels):
         '''Perform a training step
 
-        Inputs:
+        Input:
             sess: tf.Session; current session
             inputs: tensor [batch, time, activations]; batch sequential outputs from inception net
             labels: tensor [batch, time]; labels for each activation input
 
-        Outputs:
+        Output:
             accuracy: float; The accuracy of the model at predicting inputs
             cost: float; The cost of the model in predicting inputs
         '''
