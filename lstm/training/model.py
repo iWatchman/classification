@@ -40,9 +40,7 @@ class Model():
         # Size: [batches, time, pool_values]
         # TODO(gnashcraft): get input sizes from input config
         self._inputs = inputs = tf.placeholder(tf.float32, [None, None, None], name='inputs')
-        if config.keep_prob < 1.0:
-            inputs = tf.nn.dropout(inputs, config.keep_prob)
-        labels = tf.placeholder(tf.int32, [None, None], name='labels')
+        self._labels = labels = tf.placeholder(tf.int32, [None, None], name='labels')
 
         # Trainable variables for linear activation layer
         # TODO(gnashcraft): should probably get number of label options instead of hardcode
@@ -50,6 +48,8 @@ class Model():
         bias = tf.get_variable('bias', [2], tf.float32)
 
         # Graph
+        if config.keep_prob < 1.0:
+            inputs = tf.nn.dropout(inputs, config.keep_prob)
         cell = _lstm_cell(config.hidden_units, config.keep_prob, config.num_layers)
         # TODO(gnashcraft): get batch size from input config
         initial_state = cell.zero_state(None, tf.float32)
@@ -70,6 +70,32 @@ class Model():
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='cross_entropy')
         self._cost = tf.reduce_mean(tf.reduce_sum(cross_entropy, axis=[1]), name='cost')
 
+    def check_progress(self, sess, inputs, labels):
+        '''Check the accuracy and cost of the current model
+
+        Inputs:
+            sess: tf.Session; current session
+            inputs: tensor [batch, time, activations]; batch sequential outputs from inception net
+            labels: tensor [batch, time]; labels for each activation input
+
+        Outputs:
+            accuracy: float; The accuracy of the model at predicting inputs
+            cost: float; The cost of the model in predicting inputs
+        '''
+
+        fetches = {
+            'acc': self._accuracy,
+            'cost': self._cost
+        }
+
+        feed = {
+            self._inputs: inputs,
+            self._labels: labels
+        }
+
+        output = sess.run(fetches, feed_dict=feed)
+        return output['acc'], output['cost']
+
     def predict(self, sess, inputs):
         '''Predict a batch of pool_layer activations
 
@@ -81,15 +107,27 @@ class Model():
             A tensor [batch, time, num_classes] of predictions of each class for each timestep in each batch.
         '''
 
-        return sess.run(self._preds, feed_dict{self._inputs: inputs})
+        return sess.run(self._preds, feed_dict={self._inputs: inputs})
+
+    @property
+    def accuracy(self):
+        return self._accuracy
 
     @property
     def cost(self):
         return self._cost
 
     @property
-    def accuracy(self):
-        return self._accuracy
+    def inputs(self):
+        return self._inputs
+
+    @property
+    def labels(self):
+        return self._labels
+
+    @property
+    def predictions(self):
+        return self._preds
 
 class TrainModel(Model):
     '''LSTM Network for training'''
@@ -110,6 +148,33 @@ class TrainModel(Model):
 
         # Training operation
         self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)
+
+    def train_step(self, sess, inputs, labels):
+        '''Perform a training step
+
+        Inputs:
+            sess: tf.Session; current session
+            inputs: tensor [batch, time, activations]; batch sequential outputs from inception net
+            labels: tensor [batch, time]; labels for each activation input
+
+        Outputs:
+            accuracy: float; The accuracy of the model at predicting inputs
+            cost: float; The cost of the model in predicting inputs
+        '''
+
+        fetches = {
+            'train': self._train_op,
+            'acc': self._accuracy,
+            'cost': self._cost
+        }
+
+        feed = {
+            self._inputs: inputs,
+            self._labels: labels
+        }
+
+        output = sess.run(fetches, feed_dict=feed)
+        return output['acc'], output['cost']
 
     def update_learnrate(self, sess, lr):
         '''Update model learning rate for training
