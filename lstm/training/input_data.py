@@ -10,10 +10,6 @@ THREAD_STOP = 'STOP'
 # TODO(gnashcraft):
 # 1. Split into training, validation, testing sets
 # 2. Get dimensions [batch, time, pool_values]
-# 3. Get batches
-# 3a. Training
-# 3b. Validation
-# 3c. Testing
 
 def _get_frame_number(filename):
     '''Get the frame number from the file name of a frame
@@ -65,6 +61,40 @@ def _parser(in_q, act_q, lbl_q):
         activations, labels = seq.parse()
         act_q.put(activations)
         lbl_q.put(labels)
+
+def _parse_batch(sequences, threads):
+    '''Get a batch of parsed sequences
+
+    Uses mulitprocessing to parallelize sequence parsing.
+
+    Input:
+        sequences: np.array([Sequence]); numpy array of Sequences
+        threads: int; number of threads to use in parallel
+
+    Output:
+        Parsed batch of sequence activations and labels
+    '''
+
+    seq_queue = mp.Queue()
+    act_queue = mp.Queue()
+    lbl_queue = mp.Queue()
+
+    for seq in sequences:
+        seq_queue.put(seq)
+
+    for _ in range(threads):
+        mp.Process(target=_parser, args=(seq_queue, act_queue, lbl_queue)).start()
+
+    for _ in range(threads):
+        seq_queue.put(THREAD_STOP)
+
+    batch_acts = []
+    batch_lbls = []
+    for _ in range(len(sequences)):
+        batch_acts.append(act_queue.get())
+        batch_lbls.append(lbl_queue.get())
+
+    return np.array(batch_acts), np.array(batch_lbls)
 
 class Sequence():
     '''A sequence of training data'''
@@ -120,10 +150,35 @@ class Dataset():
 
         self._threads = threads
         self._seqs = np.array(sequences)
+        self._idxs = np.random.permutation(len(sequences))
+        self._cur = 0
         self._epochs = 0
 
+    def get_batch(self, batch_size):
+        '''Get a single batch of sequences
+
+        Input:
+            batch_size: int; size of the batch
+
+        Output:
+            A single batch of sequence activation and labels
+        '''
+
+        end = self._cur + batch_size
+        indices = self._idxs[cur:end]
+        self._cur = end
+        batch_seqs = self._seqs[indices]
+
+        # Reset at the end of an epoch
+        if self._cur >= len(self._seqs):
+            self._idxs = np.random.permutation(len(sequences))
+            self._cur = 0
+            self._epochs += 1
+
+        return _parse_batch(batch_seqs, self._threads)
+
     def generate_batches(self, batch_size):
-        '''Yield batch sequences for an epoch
+        '''Yield batch sequences for a full epoch
 
         Input:
             batch_size: int; size of the batch
@@ -140,39 +195,16 @@ class Dataset():
 
             end = cur + batch_size
             indices = idxs[cur:end]
-            batch_seqs = self._seqs[indices]
             cur = end
+            batch_seqs = self._seqs[indices]
 
-            ####################################################################
-            #
-            #           Use multiprocessing to parse batch sequences
-            #
-            ####################################################################
-            seq_queue = mp.Queue()
-            act_queue = mp.Queue()
-            lbl_queue = mp.Queue()
-
-            for seq in batch_seqs:
-                seq_queue.put(seq)
-
-            for _ in range(self._threads):
-                mp.Process(target=_parser, args=(seq_queue, act_queue, lbl_queue)).start()
-
-            for _ in range(self._threads):
-                seq_queue.put(THREAD_STOP)
-
-            batch_acts = []
-            batch_lbls = []
-            for _ in range(len(batch_seqs)):
-                batch_acts.append(act_queue.get())
-                batch_lbls.append(lbl_queue.get())
-            ####################################################################
-
-            yield np.array(batch_acts), np.array(batch_lbls)
+            yield _parse_batch(batch_seqs, self._threads)
 
     @property
     def epochs(self):
         return self._epochs
+
+
 
 ################################################################################
 #
