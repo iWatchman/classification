@@ -2,9 +2,6 @@
 
 import tensorflow as tf
 
-# TODO(gnashcraft):
-# 1. __init__()
-
 def _lstm_cell(hidden_units, keep_prob, num_layers):
     '''Create multi-layered LSTM Cell
 
@@ -26,6 +23,34 @@ def _lstm_cell(hidden_units, keep_prob, num_layers):
     cell_layer = dropout_cell if keep_prob < 1.0 else cell
     return tf.contrib.rnn.MultiRNNCell([cell_layer() for _ in range(num_layers)])
 
+class Config():
+    '''Model configuration'''
+
+    def __init__(self, **kwargs):
+        '''Create a new Config
+
+        Input:
+            time: [required] - int; number of frames in a sequence
+            n_act: [required] - int; number of activations in a frame
+            classes: [optional] - int; number of target classes
+            hidden_units: [optional] - int; number of hidden units in lstm layer
+            num_layers: [optional] - int; number of lstm layers
+            keep_prob: [optional] - float; probability of keeping inputs
+        '''
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+        # Defaults
+        if not hasattr(self, 'classes'):
+            self.classes = 2
+        if not hasattr(self, 'hidden_units'):
+            self.hidden_units = 256
+        if not hasattr(self, 'num_layers'):
+            self.num_layers = 1
+        if not hasattr(self, 'keep_prob'):
+            self.keep_prob = 1.0
+
 class Model():
     '''LSTM Network'''
 
@@ -38,29 +63,24 @@ class Model():
 
         # Model inputs
         # Size: [batches, time, pool_values]
-        # TODO(gnashcraft): get input sizes from input config
-        self._inputs = inputs = tf.placeholder(tf.float32, [None, None, None], name='inputs')
-        self._labels = labels = tf.placeholder(tf.int32, [None, None], name='labels')
+        self._inputs = inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
+        self._labels = labels = tf.placeholder(tf.int32, [None, config.time], name='labels')
 
         # Trainable variables for linear activation layer
-        # TODO(gnashcraft): should probably get number of label options instead of hardcode
-        weights = tf.get_variable('weights', [config.hidden_units, 2], tf.float32)
-        bias = tf.get_variable('bias', [2], tf.float32)
+        weights = tf.get_variable('weights', [config.hidden_units, config.classes], tf.float32)
+        bias = tf.get_variable('bias', [config.classes], tf.float32)
 
         # Graph
         if config.keep_prob < 1.0:
             inputs = tf.nn.dropout(inputs, config.keep_prob)
         cell = _lstm_cell(config.hidden_units, config.keep_prob, config.num_layers)
-        # TODO(gnashcraft): get batch size from input config
-        initial_state = cell.zero_state(None, tf.float32)
+        initial_state = cell.zero_state([None], tf.float32)
         outputs, states = tf.nn.dynamic_rnn(cell, inputs, initial_state=initial_state)
         outputs = tf.reshape(outputs, [-1, config.hidden_units])
         logits = tf.nn.xw_plus_b(outputs, weights, bias, name='logits')
 
         # Batch predictions
-        # TODO(gnashcraft): should probably get number of label options instead of hardcode
-        # TODO(gnashcraft): get time size
-        self._preds = preds = tf.reshape(tf.nn.softmax(logits), [-1, None, 2], name='predictions')
+        self._preds = preds = tf.reshape(tf.nn.softmax(logits), [-1, config.time, config.classes], name='predictions')
 
         # Calculate accuracy
         missed = tf.not_equal(tf.cast(labels, tf.float32), tf.arg_max(preds, 2), name='missed')
