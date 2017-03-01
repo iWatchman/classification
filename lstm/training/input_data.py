@@ -3,13 +3,27 @@
 import lstm.io_wrapper as iow
 import multiprocessing as mp
 import numpy as np
+import os
 import re
 
 THREAD_STOP = 'STOP'
 
-# TODO(gnashcraft):
-# 1. Split into training, validation, testing sets
-# 2. Get dimensions [batch, time, pool_values]
+def _get_video_name(filename):
+    '''Get the video name from a label or frame filename
+
+    Assumes filename follows one of the convetions:
+        `videoName_labels.txt`
+        'videoName_frameNumber.jpg.txt'
+
+    Input:
+        filename: str; the name of the file
+
+    Output:
+        The name of the corresponding video
+    '''
+
+    match = re.search(r"(.*)_", filename)
+    return match.groups()[0]
 
 def _get_frame_number(filename):
     '''Get the frame number from the file name of a frame
@@ -96,6 +110,94 @@ def _parse_batch(sequences, threads):
 
     return np.array(batch_acts), np.array(batch_lbls)
 
+def _create_video_sequences(data_dir, label_file, time_steps, shift):
+    '''Create Sequences for a video
+
+    Input:
+        data_dir: str; directory containing frame files
+        label_file: str; a label file for a video
+        time_steps: int; number of frames in a Sequence
+        shift: int; number of frames to shift for sliding window
+
+    Output:
+        A list of Sequences
+    '''
+
+    # Find all frame files for the video
+    # Assumes frame filenames are of the form `videoName_frameNumber.jpg.txt`
+    video_name = _get_video_name(label_file)
+    frame_files = tf.gfile.Glob(os.path.join(data_dir, '*', video_name + '_*.jpg.txt'))
+    frame_files = sorted(frame_files, key=lambda x: _get_frame_number(x))
+
+    cur = 0
+    done = False
+    sequences = []
+    while not done and cur < len(frame_files):
+
+        # Push cur back so that last sequence has the same number of frames
+        # as all other sequences
+        if cur + time_steps >= len(frame_files):
+            cur = len(frame_files) - time_steps
+            done = True
+
+        sequences.append(Sequence(frame_files[cur:cur + time_steps], label_file))
+
+        cur += shift
+
+    return sequences
+
+def _video_sequencer(in_q, out_q):
+    '''Video sequencer worker process
+
+    Input:
+        in_q: multiprocessing.Queue; work queue
+        out_q; multiprocessing.Queue; sequence array queue
+    '''
+
+    for args in iter(in_q.get, THREAD_STOP):
+        out_q.put(_create_video_sequences(**args))
+
+def _create_sequences(data_dir, label_dir, time_steps, shift, threads):
+    '''Create a list of sequences from the data
+
+    Input:
+        data_dir: str; directory containing frame data
+        label_dir: str; directory containing video labels
+        time_steps: int; number of frames in a sequence
+        shift: int; shift of sliding window
+        threads: int; number of threads to use in parallel
+
+    Output:
+        A list of Sequences
+    '''
+
+    arg_queue = mp.Queue()
+    seq_queue = mp.Queue()
+
+    # Assume all labels follow the convention 'videoName_labels.txt'
+    labels = tf.gfile.Glob(os.path.join(label_dir, '*_labels.txt'))
+
+    for label in labels:
+        args = {
+            'data_dir': data_dir,
+            'label_file': label,
+            'time_steps': time_steps,
+            'shift': shift
+        }
+        arg_queue.put(args)
+
+    for _ in range(threads):
+        mp.Process(target=_video_sequencer, args=(arg_queue, seq_queue)).start()
+
+    for _ in range(threads):
+        arg_queue.put(THREAD_STOP)
+
+    sequences = []
+    for _ in range(len(labels)):
+        sequences.extend(seq_queue.get())
+
+    return sequences
+
 class Sequence():
     '''A sequence of training data'''
 
@@ -136,6 +238,14 @@ class Sequence():
         labels = labels[self._range['start']:self.range['end'] + 1]
 
         return activations, labels
+
+    @property
+    def num_activations(self):
+        return len(_read_file(self._frames[0]))
+
+    @property
+    def time_steps(self):
+        return len(self._frames)
 
 class Dataset():
     '''Formatted dataset of Sequences'''
@@ -203,6 +313,64 @@ class Dataset():
     @property
     def epochs(self):
         return self._epochs
+
+class Data():
+    '''Training, validation, and testing datasets'''
+
+    def __init__(self, data_dir, lbls_dir, time_steps, shift_factor, val_perc, test_perc):
+        '''Create a new Data
+
+        Labels are assumed to be one label file per video. Data are considered
+        one file per frame. Each frame label is one line of the label file.
+
+        Splits all data in directory at data_dir into training, validation,
+        and testing Datasets. Validation and testing Datasets are split
+        based on percentages in val_perc and test_perc respectfully.
+
+        Input:
+            data_dir: str; directory containing data
+            lbls_dir: str; directory containing data labels
+            time_steps: int; number of frames in a sequence
+            shift_factor: int inverse factor of time_steps to determine shift of sliding window
+            val_perc: int; percentage of all data to use for validation
+            test_perc: int; percentage of all data to use for testing
+        '''
+
+        if not iow.exists(data_dir):
+            raise Exception('Unable to read data from {}. Directory does not exist!'.format(data_dir))
+
+        if not iow.exists(lbls_dir):
+            raise Exception('Unable to read labels from {}. Directory does not exist!'.format(lbls_dir))
+
+        sequences = _create_sequences(data_dir, lbls_dir, time_steps, int(time_steps / shift_factor))
+        self._dims = [-1, time_steps, sequences[0].num_activations]
+
+        # Shuffle and split Sequences into Datasets
+        test_idx = int((len(sequences) * test_perc) / 100)
+        val_idx = int((len(sequences) * val_perc) / 100) + test_idx
+        np.random.shuffle(sequences)
+
+        self._test = Dataset(sequences[:test_idx])
+        self._validate = Dataset(sequences[test_idx:val_idx])
+        self._train = Dataset(sequences[val_idx:])
+
+    @property
+    def dims(self):
+        return self._dims
+
+    @property
+    def test(self):
+        return self._test
+
+    @property
+    def validate(self):
+        return self._validate
+
+    @property
+    def train(self):
+        return self._train
+
+
 
 
 
