@@ -72,7 +72,7 @@ tf.app.flags.DEFINE_integer('num_layers',
                             1,
                             'Number of lstm layers.')
 tf.app.flags.DEFINE_float('keep_prob',
-                          0.5,
+                          0.8,
                           'Probability that input will retain between training layers.')
 tf.app.flags.DEFINE_float('init_scale',
                           0.05,
