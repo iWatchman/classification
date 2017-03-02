@@ -24,7 +24,7 @@ def _get_video_name(filename):
     '''
 
     match = re.search(r"(.*)_", filename)
-    return match.groups()[0]
+    return os.path.basename(match.groups()[0])
 
 def _get_frame_number(filename):
     '''Get the frame number from the file name of a frame
@@ -129,6 +129,7 @@ def _create_video_sequences(data_dir, label_file, time_steps, shift):
     video_name = _get_video_name(label_file)
     frame_files = tf.gfile.Glob(os.path.join(data_dir, '*', video_name + '_*.jpg.txt'))
     frame_files = sorted(frame_files, key=lambda x: _get_frame_number(x))
+    print('Found {} frames for {} from {}'.format(len(frame_files), video_name, label_file))
 
     cur = 0
     done = False
@@ -177,6 +178,7 @@ def _create_sequences(data_dir, label_dir, time_steps, shift, threads):
 
     # Assume all labels follow the convention 'videoName_labels.txt'
     labels = tf.gfile.Glob(os.path.join(label_dir, '*_labels.txt'))
+    print('Found {} label files'.format(len(labels)))
 
     for label in labels:
         args = {
@@ -345,6 +347,7 @@ class Data():
             raise Exception('Unable to read labels from {}. Directory does not exist!'.format(lbls_dir))
 
         sequences = _create_sequences(data_dir, lbls_dir, time_steps, int(time_steps / shift_factor), threads)
+        print('Created {} sequences'.format(len(sequences)))
         self._dims = [-1, time_steps, sequences[0].num_activations]
 
         # Shuffle and split Sequences into Datasets
