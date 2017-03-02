@@ -58,4 +58,4 @@ def verify_dirs_exist(dirname):
     '''
 
     if not exists(dirname):
-        gfile.MakeDirs()
+        gfile.MakeDirs(dirname)
