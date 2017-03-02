@@ -6,10 +6,9 @@ Usage:
 """
 
 import input_data
+import io_wrapper as iow
 import json
-import lstm.io_wrapper as iow
-import lstm.training.input_data as input_data
-import lstm.training.model as model
+import model
 import os
 import tensorflow as tf
 

@@ -1,6 +1,6 @@
 """Format training input"""
 
-import lstm.io_wrapper as iow
+import io_wrapper as iow
 import multiprocessing as mp
 import numpy as np
 import os
