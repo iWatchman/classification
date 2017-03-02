@@ -6,8 +6,9 @@ Usage:
 """
 
 import input_data
-from lstm import io_wrapper as iow
-import model
+import lstm.io_wrapper as iow
+import lstm.training.input_data as input_data
+import lstm.training.model as model
 import tensorflow as tf
 
 # Define optional command-line arguments
@@ -20,12 +21,9 @@ tf.app.flags.DEFINE_string('data_dir',
 tf.app.flags.DEFINE_string('labels_dir',
                            '',
                            'Directory containing training data labels.')
-tf.app.flags.DEFINE_string('pool_layer_dir',
-                           '',
-                           'Directory containing pool layer values for training data.')
-tf.app.flags.DEFINE_string('summary_dir',
-                           './summaries',
-                           'Directory containing summary training logs.')
+tf.app.flags.DEFINE_string('log_dir',
+                           './logs',
+                           'Directory containing model checkpoints and event logs.')
 tf.app.flags.DEFINE_string('output_graph',
                            './lstm_graph.pb',
                            'Filename to save trained lstm graph.')
@@ -33,10 +31,16 @@ tf.app.flags.DEFINE_float('learning_rate',
                           0.01,
                           'Initial learning rate value for training.')
 tf.app.flags.DEFINE_float('decay_rate',
-                          0.1,
+                          0.8,
                           'Decay rate for decreasing learning rate.')
+tf.app.flags.DEFINE_integer('decay_step',
+                            100,
+                            'Number of steps to increase decay rate.')
+tf.app.flags.DEFINE_integer('validate_step',
+                            10,
+                            'Number of steps to validate training.')
 tf.app.flags.DEFINE_integer('epochs',
-                            4000,
+                            5000,
                             'Number of iterations through training data.')
 tf.app.flags.DEFINE_integer('evaluate_interval',
                             10,
@@ -47,30 +51,107 @@ tf.app.flags.DEFINE_integer('val_perc',
 tf.app.flags.DEFINE_integer('test_perc',
                             10,
                             'Percent of data to use for testing set.')
-tf.app.flags.DEFINE_integer('train_secs',
+tf.app.flags.DEFINE_integer('batch_size',
                             10,
-                            'Seconds of video for training batches.')
-tf.app.flags.DEFINE_integer('val_secs',
-                            10,
-                            'Seconds of video for validation batches.')
-tf.app.flags.DEFINE_integer('test_secs',
-                            10,
-                            'Seconds of video for testing batches.')
+                            'Batch size for model inputs.')
+tf.app.flags.DEFINE_integer('frames_per_sequence',
+                            25,
+                            'Number of frames in a sequence.')
+tf.app.flags.DEFINE_integer('window_shift_factor',
+                            2,
+                            'Inverse factor of shifting across frames between sequences.')
+tf.app.flags.DEFINE_integer('hidden_units',
+                            256,
+                            'Number of hidden units within an lstm layer.')
+tf.app.flags.DEFINE_integer('num_layers',
+                            1,
+                            'Number of lstm layers.')
+tf.app.flags.DEFINE_float('keep_prob',
+                          0.5,
+                          'Probability that input will retain between training layers.')
+tf.app.flags.DEFINE_float('init_scale',
+                          0.05,
+                          'Scale for initializing variables: (-init_scale, init_scale).')
 
 def main(argv=None):
     '''Main program script'''
 
-    # NOTE
-    # Don't forget variable scope for reusing variables in validation and test
+    # Collect data into sequences and split into training, validation, and testing sets
+    data = input_data.Data(FLAGS.data_dir, FLAGS.labels_dir,
+                           FLAGS.frames_per_sequence, FLAGS.window_shift_factor,
+                           FLAGS.val_perc, FLAGS.test_perc)
 
-    # TODO(gnashcraft):
-    # 1. Split data into train, validation, testing sets
-    # 2. Add lstm training, evaluation operations
-    # 3. Run training loop
-    # 3.1. Perform interval evaluations
-    # 4. Perform testing evaluation
-    # 5. Save trained graph
-    return
+    # Configure models
+    train_config = valid_config = test_config =  {
+        'time': data_dims[1],
+        'n_act': data_dims[2],
+        'hidden_units': FLAGS.hidden_units,
+        'num_layers': FLAGS.num_layers
+    }
+    train_config['keep_prob'] = FLAGS.keep_prob
+    train_config['learn_rate'] = FLAGS.learning_rate
+    train_config['decay_rate'] = FLAGS.decay_rate
+    train_config['decay_step'] = FLAGS.decay_step
+
+    with tf.Graph().as_default():
+
+        # Create models
+        initializer = tf.random_uniform_initializer(-FLAGS.init_scale, FLAGS.init_scale)
+        train_model = model.TrainingModelFactory(train_config, initializer)
+        valid_model = model.ValidationModelFactory(valid_config, initializer)
+        test_model = model.TestingModelFactory(test_config, intializer)
+
+        # Using Supervisor manages checkpoints and summaries
+        supervisor = tf.train.Supervisor(logdir=FLAGS.log_dir)
+        with supervisor.managed_session() as sess:
+            for epoch in range(FLAGS.epochs):
+
+                # Check if we need to stop
+                if supervisor.should_stop():
+                    break
+
+                # Run training epoch
+                acc = loss = 0.0
+                count = 0
+                for train_x, train_y in data.train.generate_batches(FLAGS.batch_size):
+                    train_acc, train_loss = train_model.train_step(sess, train_x, train_y)
+                    acc += train_acc
+                    loss += train_loss
+                    count += 1
+
+                print(
+                    '[{}] => Training :: accuracy: {}, loss: {}'
+                    .format(epoch + 1, acc / count, loss / count)
+                )
+
+                # Validate testing
+                if epoch % FLAGS.validate_step == 0:
+                    valid_x, valid_y = data.validate.get_batch(FLAGS.batch_size)
+                    valid_acc, valid_loss = valid_model.check_progress(sess, valid_x, valid_y)
+                    print(
+                        '[{}] => Validate :: accuracy: {}, loss: {}'
+                        .format(epoch + 1, valid_acc, valid_loss)
+                    )
+
+            print('Training complete!')
+
+            # Training complete, now do final tests
+            acc = loss = 0.0
+            count = 0
+            for test_x, test_y in data.test.generate_batches(FLGAS.batch_size):
+                test_acc, test_loss = test_model.check_progress(sess, test_x, test_y)
+                acc += test_acc
+                loss += test_loss
+                count += 1
+
+            print(
+                '[{}] => Testing :: accuracy: {}, loss: {}'
+                .format(epoch + 1, acc / count, loss / count)
+            )
+
+            # Save output graph
+            supervisor.saver.export_meta_graph(FLAGS.output_graph)
+            print('Saved new graph to {}.'.format(FLAGS.output_graph))
 
 if __name__ == '__main__':
     tf.app.run()
