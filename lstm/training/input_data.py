@@ -201,7 +201,7 @@ def _create_sequences(data_dir, label_dir, time_steps, shift, threads):
 
     return sequences
 
-class Sequence():
+class Sequence(object):
     '''A sequence of training data'''
 
     def __init__(self, frames, label_file):
@@ -250,7 +250,7 @@ class Sequence():
     def time_steps(self):
         return len(self._frames)
 
-class Dataset():
+class Dataset(object):
     '''Formatted dataset of Sequences'''
 
     def __init__(self, sequences, threads=4):
@@ -317,7 +317,7 @@ class Dataset():
     def epochs(self):
         return self._epochs
 
-class Data():
+class Data(object):
     '''Training, validation, and testing datasets'''
 
     def __init__(self, data_dir, lbls_dir, time_steps, shift_factor, val_perc, test_perc, threads=4):

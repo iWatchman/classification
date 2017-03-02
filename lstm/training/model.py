@@ -23,7 +23,7 @@ def _lstm_cell(hidden_units, keep_prob, num_layers):
     cell_layer = dropout_cell if keep_prob < 1.0 else cell
     return tf.contrib.rnn.MultiRNNCell([cell_layer() for _ in range(num_layers)])
 
-class Config():
+class Config(object):
     '''Model configuration'''
 
     def __init__(self, **kwargs):
@@ -60,7 +60,7 @@ class Config():
         if not hasattr(self, 'keep_prob'):
             self.keep_prob = 1.0
 
-class Model():
+class Model(object):
     '''LSTM Network'''
 
     def __init__(self, config):
