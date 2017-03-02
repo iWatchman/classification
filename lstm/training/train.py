@@ -6,9 +6,11 @@ Usage:
 """
 
 import input_data
+import json
 import lstm.io_wrapper as iow
 import lstm.training.input_data as input_data
 import lstm.training.model as model
+import os
 import tensorflow as tf
 
 # Define optional command-line arguments
@@ -21,11 +23,14 @@ tf.app.flags.DEFINE_string('data_dir',
 tf.app.flags.DEFINE_string('labels_dir',
                            '',
                            'Directory containing training data labels.')
+tf.app.flags.DEFINE_string('save_dir',
+                           '.',
+                           'Root directory for saving training output.')
 tf.app.flags.DEFINE_string('log_dir',
-                           './logs',
+                           'logs',
                            'Directory containing model checkpoints and event logs.')
 tf.app.flags.DEFINE_string('output_graph',
-                           './lstm_graph.pb',
+                           'lstm_graph.pb',
                            'Filename to save trained lstm graph.')
 tf.app.flags.DEFINE_float('learning_rate',
                           0.01,
@@ -76,6 +81,14 @@ tf.app.flags.DEFINE_float('init_scale',
 def main(argv=None):
     '''Main program script'''
 
+    # Get hyperparameter tuning trial id
+    # See https://cloud.google.com/ml/docs/how-tos/using-hyperparameter-tuning
+    # for more details
+    tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
+    tf_task = tf_config.get('task', {})
+    tf_trial_id = tf_task.get('trial', '')
+    save_dir = os.path.join(FLAGS.save_dir, tf_trial_id)
+
     # Collect data into sequences and split into training, validation, and testing sets
     data = input_data.Data(FLAGS.data_dir, FLAGS.labels_dir,
                            FLAGS.frames_per_sequence, FLAGS.window_shift_factor,
@@ -101,8 +114,13 @@ def main(argv=None):
         valid_model = model.ValidationModelFactory(valid_config, initializer)
         test_model = model.TestingModelFactory(test_config, intializer)
 
+        # Add hyperparameter tuning metric summary
+        # See https://cloud.google.com/ml/docs/how-tos/using-hyperparameter-tuning
+        # for more details
+        tf.summary.scalar('training/hptuning/metric', train_model.accuracy)
+
         # Using Supervisor manages checkpoints and summaries
-        supervisor = tf.train.Supervisor(logdir=FLAGS.log_dir)
+        supervisor = tf.train.Supervisor(logdir=os.path.join(save_dir, FLAGS.log_dir))
         with supervisor.managed_session() as sess:
             for epoch in range(FLAGS.epochs):
 
@@ -120,8 +138,8 @@ def main(argv=None):
                     count += 1
 
                 print(
-                    '[{}] => Training :: accuracy: {}, loss: {}'
-                    .format(epoch + 1, acc / count, loss / count)
+                    '{} //==> [{}] => Training :: accuracy: {}, loss: {}'
+                    .format(tf_trial_id, epoch + 1, acc / count, loss / count)
                 )
 
                 # Validate testing
@@ -129,11 +147,11 @@ def main(argv=None):
                     valid_x, valid_y = data.validate.get_batch(FLAGS.batch_size)
                     valid_acc, valid_loss = valid_model.check_progress(sess, valid_x, valid_y)
                     print(
-                        '[{}] => Validate :: accuracy: {}, loss: {}'
-                        .format(epoch + 1, valid_acc, valid_loss)
+                        '{} //==> [{}] => Validate :: accuracy: {}, loss: {}'
+                        .format(tf_trial_id, epoch + 1, valid_acc, valid_loss)
                     )
 
-            print('Training complete!')
+            print('{} //==> Training complete!'.format(tf_trial_id))
 
             # Training complete, now do final tests
             acc = loss = 0.0
@@ -145,13 +163,14 @@ def main(argv=None):
                 count += 1
 
             print(
-                '[{}] => Testing :: accuracy: {}, loss: {}'
-                .format(epoch + 1, acc / count, loss / count)
+                '{} //==> [{}] => Testing :: accuracy: {}, loss: {}'
+                .format(tf_trial_id, epoch + 1, acc / count, loss / count)
             )
 
             # Save output graph
-            supervisor.saver.export_meta_graph(FLAGS.output_graph)
-            print('Saved new graph to {}.'.format(FLAGS.output_graph))
+            output_graph = os.path.join(save_dir, FLAGS.output_graph)
+            supervisor.saver.export_meta_graph(output_graph)
+            print('{} //==> Saved new graph to {}.'.format(tf_trial_id, output_graph))
 
 if __name__ == '__main__':
     tf.app.run()
