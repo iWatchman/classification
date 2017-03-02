@@ -317,7 +317,7 @@ class Dataset():
 class Data():
     '''Training, validation, and testing datasets'''
 
-    def __init__(self, data_dir, lbls_dir, time_steps, shift_factor, val_perc, test_perc):
+    def __init__(self, data_dir, lbls_dir, time_steps, shift_factor, val_perc, test_perc, threads=4):
         '''Create a new Data
 
         Labels are assumed to be one label file per video. Data are considered
@@ -334,6 +334,7 @@ class Data():
             shift_factor: int inverse factor of time_steps to determine shift of sliding window
             val_perc: int; percentage of all data to use for validation
             test_perc: int; percentage of all data to use for testing
+            threads: int; number of threads to generate batches in parallel
         '''
 
         if not iow.exists(data_dir):
@@ -342,7 +343,7 @@ class Data():
         if not iow.exists(lbls_dir):
             raise Exception('Unable to read labels from {}. Directory does not exist!'.format(lbls_dir))
 
-        sequences = _create_sequences(data_dir, lbls_dir, time_steps, int(time_steps / shift_factor))
+        sequences = _create_sequences(data_dir, lbls_dir, time_steps, int(time_steps / shift_factor), threads)
         self._dims = [-1, time_steps, sequences[0].num_activations]
 
         # Shuffle and split Sequences into Datasets
