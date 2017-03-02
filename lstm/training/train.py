@@ -47,9 +47,6 @@ tf.app.flags.DEFINE_integer('validate_step',
 tf.app.flags.DEFINE_integer('epochs',
                             5000,
                             'Number of iterations through training data.')
-tf.app.flags.DEFINE_integer('evaluate_interval',
-                            10,
-                            'Epoch interval to evaluate training results.')
 tf.app.flags.DEFINE_integer('val_perc',
                             10,
                             'Percent of data to use for validation set.')
