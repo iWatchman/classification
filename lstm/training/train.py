@@ -92,8 +92,8 @@ def main(argv=None):
 
     # Configure models
     train_config = valid_config = test_config =  {
-        'time': data_dims[1],
-        'n_act': data_dims[2],
+        'time': data.dims[1],
+        'n_act': data.dims[2],
         'hidden_units': FLAGS.hidden_units,
         'num_layers': FLAGS.num_layers
     }
