@@ -15,12 +15,12 @@
         "type": "DOUBLE",
         "minValue": 0.001,
         "maxValue": 0.1,
-        "scalarType": "UNIT_LOG_SCALE"
+        "scaleType": "UNIT_LOG_SCALE"
     },{
         "parameterName": "decay_rate",
         "type": "DOUBLE",
         "minValue": 0.75,
         "maxValue": 0.95,
-        "scalarType": "UNIT_LINEAR_SCALE"
+        "scaleType": "UNIT_LINEAR_SCALE"
     }]
 }
