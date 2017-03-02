@@ -83,7 +83,10 @@ def main(argv=None):
     tf_config = json.loads(os.environ.get('TF_CONFIG', '{}'))
     tf_task = tf_config.get('task', {})
     tf_trial_id = tf_task.get('trial', '')
+
+    # Create save directory
     save_dir = os.path.join(FLAGS.save_dir, tf_trial_id)
+    iow.verify_dirs_exist(save_dir)
 
     # Collect data into sequences and split into training, validation, and testing sets
     data = input_data.Data(FLAGS.data_dir, FLAGS.labels_dir,
