@@ -35,6 +35,9 @@ class Config():
             classes: [optional] - int; number of target classes
             hidden_units: [optional] - int; number of hidden units in lstm layer
             num_layers: [optional] - int; number of lstm layers
+            learn_rate: [optional] - float; initial learning rate for training
+            decay_rate: [optional] - float; rate of decay for learning rate
+            decay_step: [optional] - int; number of steps to wait before decaying learning rate
             keep_prob: [optional] - float; probability of keeping inputs
         '''
 
@@ -48,6 +51,12 @@ class Config():
             self.hidden_units = 256
         if not hasattr(self, 'num_layers'):
             self.num_layers = 1
+        if not hasattr(self, 'learn_rate'):
+            self.learn_rate = 0.1
+        if not hasattr(self, 'decay_rate'):
+            self.decay_rate = 0.8
+        if not hasattr(self, 'decay_step'):
+            self.decay_step = 20
         if not hasattr(self, 'keep_prob'):
             self.keep_prob = 1.0
 
@@ -161,13 +170,19 @@ class TrainModel(Model):
 
         super(TrainModel, self).__init__(config)
 
-        # Learning rate can be updated
-        self._lr = tf.Variable(config.learn_rate, trainable=False, name='lr')
-        self._new_lr = tf.placeholder(tf.float32, [], name='new_lr')
-        self._update_lr = tf.assign(self._lr, self._new_lr, name='update_lr')
+        # Learning rate will decay over time
+        global_step = tf.Variable(0, trainable=False)
+        self._lr = tf.train.exponential_decay(config.learn_rate,
+                                              global_step,
+                                              config.decay_step,
+                                              config.decay_rate,
+                                              name='learn_rate')
 
         # Training operation
-        self._train_op = tf.train.GradientDescentOptimizer(self._lr).minimize(self._cost)
+        self._train_op = (
+            tf.train.GradientDescentOptimizer(self._lr)
+            .minimize(self._cost, global_step=global_step)
+        )
 
     def train_step(self, sess, inputs, labels):
         '''Perform a training step
@@ -195,16 +210,6 @@ class TrainModel(Model):
 
         output = sess.run(fetches, feed_dict=feed)
         return output['acc'], output['cost']
-
-    def update_learnrate(self, sess, lr):
-        '''Update model learning rate for training
-
-        Input:
-            sess: tf.Session; current session
-            lr: float; the new learning rate
-        '''
-
-        sess.run(self._update_lr, feed_dict={self._new_lr: lr})
 
     @property
     def learn_rate(self):
