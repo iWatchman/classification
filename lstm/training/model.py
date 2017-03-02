@@ -171,7 +171,7 @@ class TrainModel(Model):
         super(TrainModel, self).__init__(config)
 
         # Learning rate will decay over time
-        global_step = tf.Variable(0, trainable=False)
+        global_step = tf.Variable(0, trainable=False, name='global_step')
         self._lr = tf.train.exponential_decay(config.learn_rate,
                                               global_step,
                                               config.decay_step,
