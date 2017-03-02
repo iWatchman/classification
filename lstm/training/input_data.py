@@ -4,6 +4,7 @@ import io_wrapper as iow
 import multiprocessing as mp
 import numpy as np
 import os
+import tensorflow as tf
 import re
 
 THREAD_STOP = 'STOP'
