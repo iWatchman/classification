@@ -15,13 +15,22 @@ def _lstm_cell(hidden_units, keep_prob, num_layers):
     '''
 
     def cell():
-        return tf.contrib.rnn.BasicLSTMCell(hidden_units)
+        # This is r1.0
+        #return tf.contrib.rnn.BasicLSTMCell(hidden_units)
+        # This is r0.11
+        return tf.nn.rnn_cell.BasicLSTMCell(hidden_units)
 
     def dropout_cell():
-        return tf.contrib.rnn.DropoutWrapper(cell(), output_keep_prob=keep_prob)
+        # This is r1.0
+        #return tf.contrib.rnn.DropoutWrapper(cell(), output_keep_prob=keep_prob)
+        # This is r0.11
+        return tf.nn.rnn_cell.DropoutWrapper(cell(), output_keep_prob=keep_prob)
 
     cell_layer = dropout_cell if keep_prob < 1.0 else cell
-    return tf.contrib.rnn.MultiRNNCell([cell_layer() for _ in range(num_layers)])
+    # This is r1.0
+    #return tf.contrib.rnn.MultiRNNCell([cell_layer() for _ in range(num_layers)])
+    # This is r0.11
+    return tf.nn.rnn_cell.MultiRNNCell([cell_layer() for _ in range(num_layers)])
 
 class Config(object):
     '''Model configuration'''
