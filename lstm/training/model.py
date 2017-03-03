@@ -105,7 +105,7 @@ class Model(object):
         self._preds = preds = tf.reshape(tf.nn.softmax(logits), [-1, config.time, config.classes], name='predictions')
 
         # Calculate accuracy
-        missed = tf.not_equal(tf.cast(labels, tf.float32), tf.arg_max(preds, 2), name='missed')
+        missed = tf.not_equal(labels, tf.arg_max(preds, 2), name='missed')
         self._accuracy = tf.reduce_mean(tf.cast(missed, tf.float32), name='accuracy')
 
         # Calculate cost
