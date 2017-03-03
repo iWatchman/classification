@@ -97,7 +97,7 @@ class Model(object):
         cell = _lstm_cell(config.hidden_units, config.keep_prob, config.num_layers)
         #initial_state = cell.zero_state([config.batch_size], tf.float32)
         #outputs, states = tf.nn.dynamic_rnn(cell, inputs, initial_state=initial_state)
-        outputs, states = tf.nn.dynamic_rnn(cell, inputs)
+        outputs, states = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
         outputs = tf.reshape(outputs, [-1, config.hidden_units])
         logits = tf.nn.xw_plus_b(outputs, weights, bias, name='logits')
 
