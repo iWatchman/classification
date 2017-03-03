@@ -28,7 +28,7 @@ def _get_frame_number(filename):
     '''Get the frame number from the file name of a frame
 
     Assumes filename is of one of the forms:
-        `videoName_ddd.jpg.txt`
+        `videoName_dddd.jpg.txt`
         `videoNameddd.jpg.txt`
 
     Where ddd = frameNumber
@@ -40,10 +40,15 @@ def _get_frame_number(filename):
         int; The frame number of the frame
     '''
 
-    match = re.search(r"([0-9]{3})\.jpg\.txt", filename)
-    n = match.groups()[0]
+    # Form `videoName_dddd.jpg.txt`
+    match = re.search(r"_([0-9]{4})\.jpg\.txt", filename)
+
+    # Form `videoNameddd.jpg.txt`
+    if not match:
+        match = re.search(r"([0-9]{3})\.jpg\.txt", filename)
 
     # Frames are numbered beginning at 0001 and we need to convert to 0-index
+    n = match.groups()[0]
     return int(n) - 1
 
 def _read_file(filename, cast=float, delim=','):
