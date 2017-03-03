@@ -97,6 +97,7 @@ def main(argv=None):
     train_config = valid_config = test_config =  {
         'time': data.dims[1],
         'n_act': data.dims[2],
+        'batch_size': FLAGS.batch_size,
         'hidden_units': FLAGS.hidden_units,
         'num_layers': FLAGS.num_layers
     }

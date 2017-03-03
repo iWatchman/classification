@@ -41,6 +41,7 @@ class Config(object):
         Input:
             time: [required] - int; number of frames in a sequence
             n_act: [required] - int; number of activations in a frame
+            batch_size: [optional] - int; number of sequences in a batch
             classes: [optional] - int; number of target classes
             hidden_units: [optional] - int; number of hidden units in lstm layer
             num_layers: [optional] - int; number of lstm layers
@@ -54,6 +55,8 @@ class Config(object):
             setattr(self, k, v)
 
         # Defaults
+        if not hasattr(self, 'batch_size'):
+            self.batch_size = 10
         if not hasattr(self, 'classes'):
             self.classes = 2
         if not hasattr(self, 'hidden_units'):
@@ -92,7 +95,7 @@ class Model(object):
         if config.keep_prob < 1.0:
             inputs = tf.nn.dropout(inputs, config.keep_prob)
         cell = _lstm_cell(config.hidden_units, config.keep_prob, config.num_layers)
-        initial_state = cell.zero_state([None], tf.float32)
+        initial_state = cell.zero_state([config.batch_size], tf.float32)
         outputs, states = tf.nn.dynamic_rnn(cell, inputs, initial_state=initial_state)
         outputs = tf.reshape(outputs, [-1, config.hidden_units])
         logits = tf.nn.xw_plus_b(outputs, weights, bias, name='logits')
