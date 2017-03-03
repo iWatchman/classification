@@ -84,7 +84,7 @@ class Model(object):
 
         # Model inputs
         self._inputs = inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
-        self._labels = labels = tf.placeholder(tf.int64, [None, config.time], name='labels')
+        self._labels = labels = tf.placeholder(tf.int32, [None, config.time], name='labels')
 
         # Trainable variables for linear activation layer
         weights = tf.get_variable('weights', [config.hidden_units, config.classes], tf.float32)
@@ -104,7 +104,7 @@ class Model(object):
         self._preds = preds = tf.nn.softmax(logits, name='predictions')
 
         # Calculate accuracy
-        missed = tf.not_equal(labels, tf.arg_max(preds, 2), name='missed')
+        missed = tf.not_equal(labels, tf.cast(tf.arg_max(preds, 2), tf.int32), name='missed')
         self._accuracy = tf.reduce_mean(tf.cast(missed, tf.float32), name='accuracy')
 
         # Calculate cost
