@@ -83,7 +83,6 @@ class Model(object):
         '''
 
         # Model inputs
-        # Size: [batches, time, pool_values]
         self._inputs = inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
         self._labels = labels = tf.placeholder(tf.int64, [None, config.time], name='labels')
 
@@ -99,10 +98,10 @@ class Model(object):
         #outputs, states = tf.nn.dynamic_rnn(cell, inputs, initial_state=initial_state)
         outputs, states = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
         outputs = tf.reshape(outputs, [-1, config.hidden_units])
-        logits = tf.nn.xw_plus_b(outputs, weights, bias, name='logits')
+        logits = tf.reshape(tf.nn.xw_plus_b(outputs, weights, bias), [-1, config.time, config.classes], name='logits')
 
         # Batch predictions
-        self._preds = preds = tf.reshape(tf.nn.softmax(logits), [-1, config.time, config.classes], name='predictions')
+        self._preds = preds = tf.nn.softmax(logits, name='predictions')
 
         # Calculate accuracy
         missed = tf.not_equal(labels, tf.arg_max(preds, 2), name='missed')
@@ -110,7 +109,7 @@ class Model(object):
 
         # Calculate cost
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='cross_entropy')
-        self._cost = tf.reduce_mean(tf.reduce_sum(cross_entropy, axis=[1]), name='cost')
+        self._cost = tf.reduce_mean(tf.reduce_sum(cross_entropy, 1), name='cost')
 
     def check_progress(self, sess, inputs, labels):
         '''Check the accuracy and cost of the current model
