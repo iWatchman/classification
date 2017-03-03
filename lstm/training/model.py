@@ -85,7 +85,7 @@ class Model(object):
         # Model inputs
         # Size: [batches, time, pool_values]
         self._inputs = inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
-        self._labels = labels = tf.placeholder(tf.int32, [None, config.time], name='labels')
+        self._labels = labels = tf.placeholder(tf.int64, [None, config.time], name='labels')
 
         # Trainable variables for linear activation layer
         weights = tf.get_variable('weights', [config.hidden_units, config.classes], tf.float32)
