@@ -26,7 +26,7 @@ def _lstm_cell(hidden_units, keep_prob, num_layers):
 class Config(object):
     '''Model configuration'''
 
-    def __init__(self, **kwargs):
+    def __init__(self, kwargs):
         '''Create a new Config
 
         Input:
