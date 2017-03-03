@@ -115,7 +115,7 @@ def _parse_batch(sequences, threads):
         batch_acts.append(act_queue.get())
         batch_lbls.append(lbl_queue.get())
 
-    return np.array(batch_acts), np.array(batch_lbls)
+    return np.array(batch_acts, dtype='float32'), np.array(batch_lbls, dtype='int32')
 
 def _create_video_sequences(data_dir, label_file, time_steps, shift):
     '''Create Sequences for a video
