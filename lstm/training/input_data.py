@@ -12,9 +12,7 @@ THREAD_STOP = 'STOP'
 def _get_video_name(filename):
     '''Get the video name from a label or frame filename
 
-    Assumes filename follows one of the convetions:
-        `videoName_labels.txt`
-        'videoName_frameNumber.jpg.txt'
+    Assumes filename follows the form `videoName_labels.txt`.
 
     Input:
         filename: str; the name of the file
@@ -29,7 +27,11 @@ def _get_video_name(filename):
 def _get_frame_number(filename):
     '''Get the frame number from the file name of a frame
 
-    Assumes filename is of the form `videoName_frameNumber.jpg.txt`.
+    Assumes filename is of one of the forms:
+        `videoName_ddd.jpg.txt`
+        `videoNameddd.jpg.txt`
+
+    Where ddd = frameNumber
 
     Input:
         filename: str; name of frame file
@@ -38,8 +40,7 @@ def _get_frame_number(filename):
         int; The frame number of the frame
     '''
 
-    # Assumes filename is of the form `videoName_frameNumber.jpg.txt`
-    match = re.search(r"_([0-9]*)\.jpg\.txt", filename)
+    match = re.search(r"([0-9]{3})\.jpg\.txt", filename)
     n = match.groups()[0]
 
     # Frames are numbered beginning at 0001 and we need to convert to 0-index
@@ -125,9 +126,10 @@ def _create_video_sequences(data_dir, label_file, time_steps, shift):
     '''
 
     # Find all frame files for the video
-    # Assumes frame filenames are of the form `videoName_frameNumber.jpg.txt`
+    # Frame filenames are either `videoName_ddd.jpg.txt` or `videoNameddd.jpg.txt`
+    # where ddd = frameNumber
     video_name = _get_video_name(label_file)
-    frame_files = tf.gfile.Glob(os.path.join(data_dir, '*', video_name + '_*.jpg.txt'))
+    frame_files = tf.gfile.Glob(os.path.join(data_dir, '*', video_name + '*.jpg.txt'))
     frame_files = sorted(frame_files, key=lambda x: _get_frame_number(x))
     print('Found {} frames for {} from {}'.format(len(frame_files), video_name, label_file))
 
@@ -238,7 +240,7 @@ class Sequence(object):
         labels = _read_file(self._labels, cast=int, delim='\n')
 
         # Only pull the labels associated with this sequence
-        labels = labels[self._range['start']:self.range['end'] + 1]
+        labels = labels[self._range['start']:self._range['end'] + 1]
 
         return activations, labels
 
