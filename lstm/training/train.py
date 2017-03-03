@@ -109,10 +109,11 @@ def main(argv=None):
     with tf.Graph().as_default():
 
         # Create models
+        print('{} //==> Create Models.'.format(tf_trial_id))
         initializer = tf.random_uniform_initializer(-FLAGS.init_scale, FLAGS.init_scale)
         train_model = model.TrainingModelFactory(model.Config(train_config), initializer)
         valid_model = model.ValidationModelFactory(model.Config(valid_config), initializer)
-        test_model = model.TestingModelFactory(model.Config(test_config), intializer)
+        test_model = model.TestingModelFactory(model.Config(test_config), initializer)
 
         # Add hyperparameter tuning metric summary
         # See https://cloud.google.com/ml/docs/how-tos/using-hyperparameter-tuning
@@ -122,6 +123,8 @@ def main(argv=None):
         # Using Supervisor manages checkpoints and summaries
         supervisor = tf.train.Supervisor(logdir=os.path.join(save_dir, FLAGS.log_dir))
         with supervisor.managed_session() as sess:
+
+            print('{} //==> Begin Training.'.format(tf_trial_id))
             for epoch in range(FLAGS.epochs):
 
                 # Check if we need to stop
