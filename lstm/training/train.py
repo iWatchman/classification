@@ -109,9 +109,9 @@ def main(argv=None):
 
         # Create models
         initializer = tf.random_uniform_initializer(-FLAGS.init_scale, FLAGS.init_scale)
-        train_model = model.TrainingModelFactory(train_config, initializer)
-        valid_model = model.ValidationModelFactory(valid_config, initializer)
-        test_model = model.TestingModelFactory(test_config, intializer)
+        train_model = model.TrainingModelFactory(model.Config(train_config), initializer)
+        valid_model = model.ValidationModelFactory(model.Config(valid_config), initializer)
+        test_model = model.TestingModelFactory(model.Config(test_config), intializer)
 
         # Add hyperparameter tuning metric summary
         # See https://cloud.google.com/ml/docs/how-tos/using-hyperparameter-tuning
