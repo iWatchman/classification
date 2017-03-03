@@ -249,7 +249,7 @@ def TrainingModelFactory(config, init):
             model = TrainModel(config)
         tf.summary.scalar('Accuracy', model.accuracy)
         tf.summary.scalar('Loss', model.cost)
-        tf.summary.scalar('Learning Rate', model.learn_rate)
+        tf.summary.scalar('Learning_Rate', model.learn_rate)
 
     return model
 
