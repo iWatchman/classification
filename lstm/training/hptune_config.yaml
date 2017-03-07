@@ -12,7 +12,7 @@ trainingInput:
               discreteValues: [1, 2, 3]
             - parameterName: learning_rate
               type: DOUBLE
-              minValue: 0.001
+              minValue: 0.01
               maxValue: 0.1
               scaleType: UNIT_LOG_SCALE
             - parameterName: decay_rate
