@@ -32,6 +32,70 @@ def _lstm_cell(hidden_units, keep_prob, num_layers):
     # This is r0.11
     return tf.nn.rnn_cell.MultiRNNCell([cell_layer() for _ in range(num_layers)])
 
+def _accuracy_ops(targets, predictions):
+    '''Calculate aggregated accuracy
+
+    Input:
+        targets: tf.Tensor [batch_size, time_steps]; the target labels
+        predictions: tf.Tensor [batch_size, time_steps, classes]; confidences per class
+
+    Output:
+        accuracy: the accuracy operation
+        updates: update operations for aggregating across batches
+        resets: reset operations to reset update counters following an epoch
+    '''
+
+    # Initial counter values (this is only called once)
+    incorrect_counter = tf.Variable(0, trainable=False)
+    correct_counter = tf.Variable(0, trainable=False)
+
+    # Correct and incorrect counts for a batch
+    missed = tf.not_equal(targets, tf.cast(tf.arg_max(predictions, 2), tf.int32))
+    incorrect = tf.reduce_sum(tf.cast(missed, tf.int32))
+    correct = tf.reduce_sum(tf.cast(tf.logical_not(missed), tf.int32))
+
+    # Keep running counts across all batches
+    update_incorrect_counter = tf.assign_add(incorrect_counter, incorrect)
+    update_correct_counter = tf.assign_add(correct_counter, correct)
+
+    # Reset counts at the end of every epoch
+    reset_incorrect_counter = tf.assign(incorrect_counter, 0)
+    reset_correct_counter = tf.assign(correct_counter, 0)
+
+    # Accuracy operation
+    accuracy = tf.div(tf.cast(correct_counter, tf.float32), tf.cast(correct_counter + incorrect_counter, tf.float32))
+
+    return accuracy, [update_incorrect_counter, update_correct_counter], [reset_incorrect_counter, reset_correct_counter]
+
+def _cost_ops(loss):
+    '''Calculate aggregate cost
+
+    Input:
+        loss: tf.Tensor; the batch loss
+
+    Output:
+        cost: the cost operation
+        updates: update operations for aggregating across batches
+        resets: reset operations to reset update counters following and epoch
+    '''
+
+    # Initial counter values (this is only called once)
+    total = tf.Variable(0.0, trainable=False)
+    count = tf.Variable(0, trainable=False)
+
+    # Keep running counters across all batches
+    update_total = tf.assign_add(total, loss)
+    update_count = tf.assign_add(count, 1)
+
+    # Reset counters at the end of every epoch
+    reset_total = tf.assign(total, 0.0)
+    reset_count = tf.assign(count, 0)
+
+    # Cost operation
+    cost = tf.div(total, tf.cast(count, tf.float32))
+
+    return cost, [update_total, update_count], [reset_total, reset_count]
+
 class Config(object):
     '''Model configuration'''
 
@@ -83,8 +147,8 @@ class Model(object):
         '''
 
         # Model inputs
-        self._inputs = inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
-        self._labels = labels = tf.placeholder(tf.int32, [None, config.time], name='labels')
+        self._inputs = tf.placeholder(tf.float32, [None, config.time, config.n_act], name='inputs')
+        self._labels = tf.placeholder(tf.int32, [None, config.time], name='labels')
 
         # Trainable variables for linear activation layer
         weights = tf.get_variable('weights', [config.hidden_units, config.classes], tf.float32)
@@ -92,50 +156,78 @@ class Model(object):
 
         # Graph
         if config.keep_prob < 1.0:
-            inputs = tf.nn.dropout(inputs, config.keep_prob)
+            inputs = tf.nn.dropout(self._inputs, config.keep_prob)
         cell = _lstm_cell(config.hidden_units, config.keep_prob, config.num_layers)
-        #initial_state = cell.zero_state([config.batch_size], tf.float32)
-        #outputs, states = tf.nn.dynamic_rnn(cell, inputs, initial_state=initial_state)
-        outputs, states = tf.nn.dynamic_rnn(cell, inputs, dtype=tf.float32)
+        outputs, states = tf.nn.dynamic_rnn(cell, self._inputs, dtype=tf.float32)
         outputs = tf.reshape(outputs, [-1, config.hidden_units])
         logits = tf.reshape(tf.nn.xw_plus_b(outputs, weights, bias), [-1, config.time, config.classes], name='logits')
 
         # Batch predictions
-        self._preds = preds = tf.nn.softmax(logits, name='predictions')
+        self._preds = tf.nn.softmax(logits, name='predictions')
 
-        # Calculate accuracy
-        missed = tf.not_equal(labels, tf.cast(tf.arg_max(preds, 2), tf.int32), name='missed')
-        self._accuracy = tf.reduce_mean(tf.cast(missed, tf.float32), name='accuracy')
+        # Calculate loss
+        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self._labels, name='cross_entropy')
+        self._loss = tf.reduce_sum(cross_entropy, name='loss')
 
-        # Calculate cost
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels, name='cross_entropy')
-        self._cost = tf.reduce_mean(tf.reduce_sum(cross_entropy, 1), name='cost')
+        # Calculate aggregate accuracy and cost
+        self._accuracy, accuracy_updates, accuracy_resets = _accuracy_ops(self._labels, self._preds)
+        self._cost, cost_updates, cost_resets = _cost_ops(self._loss)
+        self._updates = accuracy_updates + cost_updates
+        self._resets = accuracy_resets + cost_resets
 
-    def check_progress(self, sess, inputs, labels):
+        # Add summaries later if desired with add_summaries
+        self._summary_op = None
+
+    def add_summaries(self, summaries):
+        '''Add summaries to the Model
+
+        Input:
+            summaries: [string tensor]; summaries to add
+        '''
+
+        if self._summary_op is not None:
+            summaries.append(self._summary_op)
+
+        self._summary_op = tf.summary.merge(summaries)
+
+    def check(self, sess, inputs=None, labels=None, generator=None, updates=[]):
         '''Check the accuracy and cost of the current model
 
-        Inputs:
+        May be used either for a single batch or an entire epoch.
+        For single batch use, must supply inputs and labels.
+        For entire epoch use, must supply a generator.
+
+        Input:
             sess: tf.Session; current session
             inputs: tensor [batch, time, activations]; batch sequential outputs from inception net
             labels: tensor [batch, time]; labels for each activation input
+            generator: generates batch inputs and labels
+            updates: [tf.Tensor]; list of tensors to run updates on per batch
 
-        Outputs:
-            accuracy: float; The accuracy of the model at predicting inputs
-            cost: float; The cost of the model in predicting inputs
+        Output:
+            summary: serialized protobuf; computed model summaries
+            accuracy: float; the accuracy of the model at predicting inputs
+            cost: float; the cost of the model in predicting inputs
         '''
 
         fetches = {
+            'summary': self._summary_op,
             'acc': self._accuracy,
             'cost': self._cost
         }
 
-        feed = {
-            self._inputs: inputs,
-            self._labels: labels
-        }
+        if generator is not None:
+            for inputs, labels in generator:
+                feed = {self._inputs: inputs, self._labels: labels}
+                sess.run(self._updates + updates, feed_dict=feed)
+        else:
+            feed = {self._inputs: inputs, self._labels: labels}
+            sess.run(self._updates + updates, feed_dict=feed)
 
-        output = sess.run(fetches, feed_dict=feed)
-        return output['acc'], output['cost']
+        output = sess.run(fetches)
+        sess.run(self._resets)
+
+        return output['summary'], output['acc'], output['cost']
 
     def predict(self, sess, inputs):
         '''Predict a batch of pool_layer activations
@@ -177,15 +269,15 @@ class TrainModel(Model):
         '''Create a new TrainModel
 
         Input:
-            config: see Model class;
+            config: see Model class
         '''
 
         super(TrainModel, self).__init__(config)
 
         # Learning rate will decay over time
-        global_step = tf.Variable(0, trainable=False, name='global_step')
+        self._global_step = tf.Variable(0, trainable=False, name='global_step')
         self._lr = tf.train.exponential_decay(config.learn_rate,
-                                              global_step,
+                                              self._global_step,
                                               config.decay_step,
                                               config.decay_rate,
                                               name='learn_rate')
@@ -193,36 +285,25 @@ class TrainModel(Model):
         # Training operation
         self._train_op = (
             tf.train.GradientDescentOptimizer(self._lr)
-            .minimize(self._cost, global_step=global_step)
+            .minimize(self._loss, global_step=self._global_step)
         )
 
-    def train_step(self, sess, inputs, labels):
-        '''Perform a training step
+    def train_step(self, sess, generator):
+        '''Perform training for an entire epoch
 
         Input:
-            sess: tf.Session; current session
-            inputs: tensor [batch, time, activations]; batch sequential outputs from inception net
-            labels: tensor [batch, time]; labels for each activation input
+            See Model.check()
 
         Output:
-            accuracy: float; The accuracy of the model at predicting inputs
-            cost: float; The cost of the model in predicting inputs
+            see Model.check()
         '''
 
-        fetches = {
-            'train': self._train_op,
-            'acc': self._accuracy,
-            'cost': self._cost
-        }
+        return self.check(sess, generator=generator, updates=[self._train_op])
 
-        feed = {
-            self._inputs: inputs,
-            self._labels: labels
-        }
-
-        output = sess.run(fetches, feed_dict=feed)
-        return output['acc'], output['cost']
-
+    @property
+    def global_step(self):
+        return self._global_step
+        
     @property
     def learn_rate(self):
         return self._lr
@@ -241,19 +322,21 @@ def TrainingModelFactory(config, init):
         init: Initializer for variables
 
     Output:
-        A new TrainModel
+        The created TrainModel
     '''
 
     with tf.name_scope('Training'):
         with tf.variable_scope('Model', reuse=None, initializer=init):
             model = TrainModel(config)
-        tf.summary.scalar('Accuracy', model.accuracy)
-        tf.summary.scalar('Loss', model.cost)
-        tf.summary.scalar('Learning_Rate', model.learn_rate)
+        model.add_summaries([
+            tf.summary.scalar('Accuracy', model.accuracy),
+            tf.summary.scalar('Loss', model.cost),
+            tf.summary.scalar('Learning_Rate', model.learn_rate)
+        ])
 
     return model
 
-def ValidationModelFactory(config, init):
+def ValidationModelFactory(config, init, hptuning=False):
     '''Create a new Model for validation
 
     Wraps model and summary writers in appropriate variable and name scopes.
@@ -261,16 +344,25 @@ def ValidationModelFactory(config, init):
     Input:
         config: see Model class;
         init: Initializer for variables
+        hptuning: bool; True if tuning hyperparameters, False otherwise
 
     Output:
-        A new Model for validation
+        The created Model
     '''
 
     with tf.name_scope('Validation'):
         with tf.variable_scope('Model', reuse=True, initializer=init):
             model = Model(config)
-        tf.summary.scalar('Accuracy', model.accuracy)
-        tf.summary.scalar('Loss', model.cost)
+        model.add_summaries([
+            tf.summary.scalar('Accuracy', model.accuracy),
+            tf.summary.scalar('Loss', model.cost)
+        ])
+
+    # Add hyperparameter tuning summary (if applicable)
+    # See https://cloud.google.com/ml/docs/how-tos/using-hyperparameter-tuning
+    # for more details
+    if hptuning:
+        model.add_summaries([tf.summary.scalar('training/hptuning/metric', model.accuracy)])
 
     return model
 
@@ -284,11 +376,15 @@ def TestingModelFactory(config, init):
         init: Initializer for variables
 
     Output:
-        A new Model for testing
+        The created Model
     '''
 
     with tf.name_scope('Testing'):
         with tf.variable_scope('Model', reuse=True, initializer=init):
             model = Model(config)
+        model.add_summaries([
+            tf.summary.scalar('Accuracy', model.accuracy),
+            tf.summary.scalar('Loss', model.cost)
+        ])
 
     return model

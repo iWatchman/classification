@@ -43,13 +43,16 @@ def _get_frame_number(filename):
     # Form `videoName_dddd.jpg.txt`
     match = re.search(r"_([0-9]{4})\.jpg\.txt", filename)
 
-    # Form `videoNameddd.jpg.txt`
     if not match:
+        # Form `videoNameddd.jpg.txt`
+        # In this case, ddd is 0-based
         match = re.search(r"([0-9]{3})\.jpg\.txt", filename)
+        n = int(match.groups()[0])
+    else:
+        # In this case, dddd is 1-based
+        n = int(match.groups()[0]) - 1
 
-    # Frames are numbered beginning at 0001 and we need to convert to 0-index
-    n = match.groups()[0]
-    return int(n) - 1
+    return n
 
 def _read_file(filename, cast=float, delim=','):
     '''Read a file containing values separated by a delimiter
@@ -67,7 +70,7 @@ def _read_file(filename, cast=float, delim=','):
         f_str = f.read()
 
     # Cast each value, skipping any empty strings
-    return [cast(x) for x in f_str.split(delim) if x]
+    return [cast(x) for x in f_str.split(delim) if len(x)]
 
 def _parser(in_q, act_q, lbl_q):
     '''Parser worker process
@@ -117,7 +120,18 @@ def _parse_batch(sequences, threads):
 
     return np.array(batch_acts, dtype='float32'), np.array(batch_lbls, dtype='int32')
 
-def _create_video_sequences(data_dir, label_file, time_steps, shift):
+def _create_sequence(in_q, out_q):
+    '''Create sequence worker process
+
+    Input:
+        in_q: multiprocessing.Queue; work queue
+        out_q; multiprocessing.Queue; sequence queue
+    '''
+
+    for args in iter(in_q.get, THREAD_STOP):
+        out_q.put(Sequence(args[0], args[1]))
+
+def _create_video_sequences(data_dir, label_file, time_steps, shift, threads):
     '''Create Sequences for a video
 
     Input:
@@ -125,6 +139,7 @@ def _create_video_sequences(data_dir, label_file, time_steps, shift):
         label_file: str; a label file for a video
         time_steps: int; number of frames in a Sequence
         shift: int; number of frames to shift for sliding window
+        threads: int; number of threads to use in parallel
 
     Output:
         A list of Sequences
@@ -136,11 +151,14 @@ def _create_video_sequences(data_dir, label_file, time_steps, shift):
     video_name = _get_video_name(label_file)
     frame_files = tf.gfile.Glob(os.path.join(data_dir, '*', video_name + '*.jpg.txt'))
     frame_files = sorted(frame_files, key=lambda x: _get_frame_number(x))
-    print('Found {} frames for {} from {}'.format(len(frame_files), video_name, label_file))
+    # print('Found {} frames for {} from {}'.format(len(frame_files), video_name, label_file))
 
-    cur = 0
+    arg_queue = mp.Queue()
+    seq_queue = mp.Queue()
+
+    cur = count = 0
     done = False
-    sequences = []
+    # sequences = []
     while not done and cur < len(frame_files):
 
         # Push cur back so that last sequence has the same number of frames
@@ -149,9 +167,21 @@ def _create_video_sequences(data_dir, label_file, time_steps, shift):
             cur = len(frame_files) - time_steps
             done = True
 
-        sequences.append(Sequence(frame_files[cur:cur + time_steps], label_file))
+        # sequences.append(Sequence(frame_files[cur:cur + time_steps], label_file))
+        arg_queue.put((frame_files[cur:cur + time_steps], label_file))
 
         cur += shift
+        count += 1
+
+    for _ in range(threads):
+        mp.Process(target=_create_sequence, args=(arg_queue, seq_queue)).start()
+
+    for _ in range(threads):
+        arg_queue.put(THREAD_STOP)
+
+    sequences = []
+    for _ in range(count):
+        sequences.append(seq_queue.get())
 
     return sequences
 
@@ -185,14 +215,15 @@ def _create_sequences(data_dir, label_dir, time_steps, shift, threads):
 
     # Assume all labels follow the convention 'videoName_labels.txt'
     labels = tf.gfile.Glob(os.path.join(label_dir, '*_labels.txt'))
-    print('Found {} label files'.format(len(labels)))
+    # print('Found {} label files'.format(len(labels)))
 
     for label in labels:
         args = {
             'data_dir': data_dir,
             'label_file': label,
             'time_steps': time_steps,
-            'shift': shift
+            'shift': shift,
+            'threads': threads
         }
         arg_queue.put(args)
 
@@ -224,14 +255,21 @@ class Sequence(object):
             label_file: str; file name of labels file
         '''
 
+        self._name = _get_video_name(label_file)
+
         # Get starting and ending indices of the sequence
         self._range = {
             'start': _get_frame_number(frames[0]),
             'end': _get_frame_number(frames[-1])
         }
 
-        self._frames = frames
-        self._labels = label_file
+        # self._frames = frames
+        # self._labels = label_file
+
+        labels = _read_file(label_file, cast=int, delim='\n')
+        self._labels = np.array(labels[self._range['start']:self._range['end'] + 1])
+        self._frames = np.array([_read_file(frame) for frame in frames])
+        assert self._labels.shape[0] == self._frames.shape[0], 'Frames ({}) and labels ({}) must have same first dimension'.format(self._frames.shape[0], self._labels.shape[0])
 
     def parse(self):
         '''Parse frame activations and labels in the sequence
@@ -241,17 +279,23 @@ class Sequence(object):
             labels: [int]; the labels of each frame
         '''
 
-        activations = [_read_file(frame) for frame in self._frames]
-        labels = _read_file(self._labels, cast=int, delim='\n')
+        # activations = [_read_file(frame) for frame in self._frames]
+        # labels = _read_file(self._labels, cast=int, delim='\n')
+        #
+        # # Only pull the labels associated with this sequence
+        # labels = labels[self._range['start']:self._range['end'] + 1]
+        #
+        # return activations, labels
+        return self._frames, self._labels
 
-        # Only pull the labels associated with this sequence
-        labels = labels[self._range['start']:self._range['end'] + 1]
-
-        return activations, labels
+    def display(self):
+        '''Display information about this Sequence'''
+        return '{} ====> [{} -> {}]: {} | {}'.format(self._name, self._range['start'], self._range['end'], self._labels.shape, self._frames.shape)
 
     @property
     def num_activations(self):
-        return len(_read_file(self._frames[0]))
+        # return len(_read_file(self._frames[0]))
+        return self._frames.shape[1]
 
     @property
     def time_steps(self):
@@ -285,7 +329,7 @@ class Dataset(object):
         '''
 
         end = self._cur + batch_size
-        indices = self._idxs[cur:end]
+        indices = self._idxs[self._cur:end]
         self._cur = end
         batch_seqs = self._seqs[indices]
 
@@ -354,7 +398,7 @@ class Data(object):
             raise Exception('Unable to read labels from {}. Directory does not exist!'.format(lbls_dir))
 
         sequences = _create_sequences(data_dir, lbls_dir, time_steps, int(time_steps / shift_factor), threads)
-        print('Created {} sequences'.format(len(sequences)))
+        # print('Created {} sequences'.format(len(sequences)))
         self._dims = [-1, time_steps, sequences[0].num_activations]
 
         # Shuffle and split Sequences into Datasets
