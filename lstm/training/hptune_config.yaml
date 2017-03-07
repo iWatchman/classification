@@ -1,8 +1,8 @@
 trainingInput:
     hyperparameters:
         goal: MAXIMIZE
-        maxTrials: 40
-        maxParallelTrials: 2
+        maxTrials: 20
+        maxParallelTrials: 4
         params:
             - parameterName: hidden_units
               type: DISCRETE
@@ -20,3 +20,6 @@ trainingInput:
               minValue: 0.75
               maxValue: 0.95
               scaleType: UNIT_LINEAR_SCALE
+            - parameterName: decay_step
+              type: DISCRETE
+              discreteValues: [5, 10, 25, 50]
