@@ -17,9 +17,9 @@ trainingInput:
               scaleType: UNIT_LOG_SCALE
             - parameterName: decay_rate
               type: DOUBLE
-              minValue: 0.75
+              minValue: 0.1
               maxValue: 0.95
               scaleType: UNIT_LINEAR_SCALE
             - parameterName: decay_step
               type: DISCRETE
-              discreteValues: [5, 10, 25, 50]
+              discreteValues: [80, 100]
