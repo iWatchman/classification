@@ -276,6 +276,7 @@ class TrainModel(Model):
 
         # Learning rate will decay over time
         self._global_step = tf.Variable(0, trainable=False, name='global_step')
+        self._increment_gs = tf.assign_add(self._global_step, 1)
         self._lr = tf.train.exponential_decay(config.learn_rate,
                                               self._global_step,
                                               config.decay_step,
@@ -286,7 +287,7 @@ class TrainModel(Model):
         # Training operation
         self._train_op = (
             tf.train.GradientDescentOptimizer(self._lr)
-            .minimize(self._loss, global_step=self._global_step)
+            .minimize(self._loss)
         )
 
     def train_step(self, sess, generator):
@@ -299,7 +300,9 @@ class TrainModel(Model):
             see Model.check()
         '''
 
-        return self.check(sess, generator=generator, updates=[self._train_op])
+        output = self.check(sess, generator=generator, updates=[self._train_op])
+        sess.run(self._increment_gs)
+        return output
 
     @property
     def global_step(self):
