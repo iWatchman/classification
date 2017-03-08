@@ -280,6 +280,7 @@ class TrainModel(Model):
                                               self._global_step,
                                               config.decay_step,
                                               config.decay_rate,
+                                              staircase=True,
                                               name='learn_rate')
 
         # Training operation
@@ -303,7 +304,7 @@ class TrainModel(Model):
     @property
     def global_step(self):
         return self._global_step
-        
+
     @property
     def learn_rate(self):
         return self._lr
